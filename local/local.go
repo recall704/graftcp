@@ -2,6 +2,7 @@ package local
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -167,7 +168,9 @@ func (l *Local) StartService(ln *net.TCPListener) {
 	for {
 		conn, err := ln.AcceptTCP()
 		if err != nil {
-			log.Errorf("accept err: %s", err.Error())
+			if !errors.Is(err, net.ErrClosed) {
+				log.Errorf("accept err: %s", err.Error())
+			}
 			break
 		}
 		go l.HandleConn(conn)
@@ -182,7 +185,7 @@ func (l *Local) Start() {
 	l.StartService(ln)
 }
 
-func getPidByAddr(localAddr, remoteAddr string, isTCP6 bool) (pid string, destAddr string) {
+func _getPidByAddr(localAddr, remoteAddr string, isTCP6 bool) (pid string, destAddr string) {
 	inode, err := getInodeByAddrs(localAddr, remoteAddr, isTCP6)
 	if err != nil {
 		log.Errorf("getInodeByAddrs(%s, %s) err: %s", localAddr, remoteAddr, err.Error())
@@ -208,13 +211,37 @@ func getPidByAddr(localAddr, remoteAddr string, isTCP6 bool) (pid string, destAd
 	return
 }
 
+func getPidByAddr(localAddr, remoteAddr string, isTCP6 bool) (pid string, destAddr string) {
+	pid, destAddr = _getPidByAddr(localAddr, remoteAddr, isTCP6)
+	if pid == "" || destAddr == "" {
+		// NOTE: There are some unusual cases that can cause the above _getPidByAddr
+		// to fail to obtain the pid and destAddr.
+		// For example: The Source IP Address field in the IP packet header has been
+		// rewritten (iptables, nftables, and eBPF can all do this).
+		// In this case, we try again using "127.0.0.1"(::1 for IPv6).
+		// However, if the client binds to another IP (which is also unusual) before
+		// the connect call, rather than "127.0.0.1", then the retrieval will also fail.
+		// Although the pidAddrMap does store the pid and destAddr information we're
+		// looking for, it cannot guarantee correctness in concurrent situations,
+		// so we're not planning to use the information in pidAddrMap directly for now.
+		var localIP string
+		if isTCP6 {
+			localIP = localIPv6
+		} else {
+			localIP = localIPv4
+		}
+		host, port, err := splitAddr(localAddr, isTCP6)
+		if err == nil && host != localIP {
+			pid, destAddr = _getPidByAddr(net.JoinHostPort(localIP, port), remoteAddr, isTCP6)
+		}
+	}
+	return pid, destAddr
+}
+
 // HandleConn handle conn.
 func (l *Local) HandleConn(conn net.Conn) error {
 	raddr := conn.RemoteAddr()
-	var isTCP6 bool
-	if strings.Contains(conn.LocalAddr().String(), "[") {
-		isTCP6 = true
-	}
+	isTCP6 := strings.Contains(conn.LocalAddr().String(), "[")
 	pid, destAddr := getPidByAddr(raddr.String(), conn.LocalAddr().String(), isTCP6)
 	if pid == "" || destAddr == "" {
 		log.Errorf("getPidByAddr(%s, %s) failed", raddr.String(), conn.LocalAddr().String())
@@ -286,7 +313,10 @@ func (l *Local) UpdateProcessAddrInfo() {
 			pid = s[2]
 			addr = s[0] + ":" + s[1]
 		}
-		go StorePidAddr(pid, addr)
+		go func() {
+			StorePidAddr(pid, addr)
+			log.Debugf("StorePidAddr(%s, %s)", pid, addr)
+		}()
 	}
 }
 

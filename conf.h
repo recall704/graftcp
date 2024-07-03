@@ -1,6 +1,6 @@
 /*
  * graftcp
- * Copyright (C) 2021 Hmgle <dustgle@gmail.com>
+ * Copyright (C) 2021, 2024 Hmgle <dustgle@gmail.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,6 +26,7 @@ struct graftcp_conf {
 	char *blackip_file_path;
 	char *whiteip_file_path;
 	bool *ignore_local;
+	char *username;
 };
 
 typedef int (*config_cb)(const char *, const char *, struct graftcp_conf *);

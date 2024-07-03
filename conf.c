@@ -1,6 +1,6 @@
 /*
  * graftcp
- * Copyright (C) 2021, 2023 Hmgle <dustgle@gmail.com>
+ * Copyright (C) 2021, 2023, 2024 Hmgle <dustgle@gmail.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -90,9 +90,12 @@ static const struct graftcp_config_t *graftcp_getconfig(const char *key)
 {
 	int i;
 
-	for (i = 0; i < config_size; i++)
-		if (!strncmp(config[i].name, key, strlen(config[i].name)))
+#define MAX(a,b) (((a)>(b))?(a):(b))
+	for (i = 0; i < config_size; i++) {
+		if (!strncmp(config[i].name, key, MAX(strlen(config[i].name), strlen(key))))
 			return &config[i];
+	}
+#undef MAX
 	return NULL;
 }
 
@@ -120,8 +123,9 @@ static int right_space(char *buf, size_t len)
 {
 	int i;
 	for (i = len - 1; i >= 0; i--)
-		if (buf[i] != ' ' && buf[i] != '\t' && buf[i] != '\0')
-			return i;
+		if (buf[i] != ' ' && buf[i] != '\t' && buf[i] != '\0' &&
+		    buf[i] != '\n' && buf[i] != '\r')
+			return i + 1;
 	return 0;
 }
 
@@ -167,6 +171,7 @@ int conf_init(struct graftcp_conf *conf)
 	conf->blackip_file_path = NULL;
 	conf->whiteip_file_path = NULL;
 	conf->ignore_local = NULL;
+	conf->username = NULL;
 	return 0;
 }
 
@@ -195,6 +200,10 @@ void conf_free(struct graftcp_conf *conf)
 	if (conf->ignore_local) {
 		free(conf->ignore_local);
 		conf->ignore_local = NULL;
+	}
+	if (conf->username) {
+		free(conf->username);
+		conf->username = NULL;
 	}
 }
 
@@ -279,4 +288,6 @@ void conf_override(struct graftcp_conf *w, const struct graftcp_conf *r)
 		w->whiteip_file_path = r->whiteip_file_path;
 	if (r->ignore_local)
 		w->ignore_local = r->ignore_local;
+	if (r->username)
+		w->username = r->username;
 }
